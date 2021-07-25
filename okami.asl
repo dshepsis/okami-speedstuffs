@@ -4,9 +4,12 @@ state("Okami")
 	// IGT is measured by frames in game. Time will start if you started a new
 	// game from the title menu, or by loading a NG+ file.
 	int time : "main.dll", 0xB217FC;
+	int minigame_timer : "main.dll", 0xB1DC5C;
 
 	// For Holy Eagle, Digging Champ, etc.
-	byte movementTech: "main.dll", 0xB4DFA2;
+	byte movement_tech : "main.dll", 0xB4DFA2;
+
+	bool game_pause_boolean : "flower_kernel.m2::render::Context::_pCurrentContext", 0x44;
 
 	// Multi-use flags
 	// Area ID list: https://docs.google.com/spreadsheets/d/1IoZ1XFeblOTb6Qq9PHfBq1KRdcpgYRz8pTObhF3qMrs/edit?usp=sharing
@@ -29,11 +32,16 @@ state("Okami")
 	int horn : "main.dll", 0xB206CA;
 
 	// Bosses
-	int blight2: "main.dll", 0xB3552C;
-	int crimson_helm2: "main.dll", 0xB356F4;
-	int ninetails2: "main.dll", 0xB35610;
-	int orochi3: "main.dll", 0xB35448;
-	int spider_queen2: "main.dll", 0xB35364;
+	int blight2 : "main.dll", 0xB3552C;
+	int crimson_helm2 : "main.dll", 0xB356F4;
+	int ninetails2 : "main.dll", 0xB35610;
+	int orochi3 : "main.dll", 0xB35448;
+	int spider_queen2 : "main.dll", 0xB35364;
+
+	// Tracks which dogs we've fed/fought. Just a simple counter tho so it's not really robust
+	int dog_counter : "main.dll", 0xB6D778, 0x2C;
+
+	int feed_dog_bitfield : "main.dll", 0xB213C9;
 
 	// Endgame
 	// Timing ends on the "Final Results" screen for IGT.
@@ -63,13 +71,16 @@ startup
 	settings.Add("agata_ruins", true, "Enter Tsuta Ruins", "ruins");
 	settings.Add("ruins_spider", false, "Enter Spider Queen", "ruins");
 	settings.Add("spider_queen", true, "Defeat Spider Queen", "ruins");
-	// TODO: area id for log minigame?
 
 	// Kusa Village
 	settings.Add("kusa", true, "Kusa Village");
 	settings.Add("agata_taka", true, "Enter Taka Pass", "kusa");
 	settings.Add("taka_kusa", false, "Enter Kusa Village", "kusa");
 	settings.Add("canine_tracker", true, "Get Canine Tracker", "kusa");
+	settings.Add("rei", true, "Feed Rei", "kusa");
+	settings.Add("chi", true, "Feed Chi", "kusa");
+	settings.Add("shin", true, "Feed Shin", "kusa");
+	settings.Add("ko", true, "Feed Ko", "kusa");
 	settings.Add("kusa_taka", true, "Exit Kusa Village", "kusa");
 
 	// Sasa Sanctuary
@@ -172,74 +183,88 @@ init
 	vars.taka_kusa = false;
 	vars.kusa_taka = false;
 	vars.coast_city = false;
-	// HashSet to hold splits already hit
-	// In case of dying after triggering a split, triggering it again can cause a false double split without this
-	// vars.Splits = new HashSet<string>();
 
-	// Dictionary which holds MemoryWatchers that correspond to each flag
-	// vars.Flags = new Dictionary<string, MemoryWatcher<double>>();
+	// Prevents resetting when we haven't even started yet
+	vars.is_running = false;
 
-	// // Function that'll return if 100% conditions are met
-	// vars.Is100Run = (Func<bool>)(() =>
-	// {
-	// 	return vars.Flags["choir"].Current &&
-	// 		   vars.Flags["vitalityFragments"].Current == 17 &&
-	// 		   vars.Flags["bugIvories"].Current == 20;
-	// });
-}
+	// Prevents double-splitting of everything. EVERYTHING.
+	vars.the_big_one = new HashSet<string>();
 
-update
-{
-	// Initialize flags when the flags pointer gets initialized/changes, or we load up LiveSplit while in-game
-	// if (old.FlagsPtr != current.FlagsPtr || current.FlagsPtr != 0 && vars.Flags.Count == 0)
-	// {
-	// 	print("Initialize flags....................................................");
-	// 	// Last offsets of FlagsPtr to read
-	// 	Dictionary<string, int> yamatoBosses = new Dictionary<string, int>
-	// 	{
-	// 		{"blightII",      0x3552C},
-	// 		{"crimsonHelmII", 0x356F4},
-	// 		{"orochiIIII",     0x35448},
-	// 		{"ninetailsII",   0x35610},
-	// 		{"spiderQueenII", 0x35364},
-	// 	};
+	vars.feed_dog_bitfield = new Dictionary<string, int>
+	{
+		{"shin", 0x10},
+		{"rei", 0x20},
+		{"ko", 0x40},
+		{"chi", 0x80},
+	};
 
-	// 	vars.Flags = yamatoBosses.Keys
-	//   							.ToDictionary(key => key, key => new MemoryWatcher<double>((IntPtr)current.FlagsPtr + yamatoBosses[key]));
-	// }
+	vars.IsDogJustFed = (Func<int, KeyValuePair<string, int>, bool>)((current_state, dog) =>
+	{
+		return (settings[dog.Key] &&
+			!vars.the_big_one.Contains(dog.Key) &&
+			(current_state & dog.Value) == dog.Value);
+	});
 
-	// Update all MemoryWatchers in vars.Flags
-	// new List<MemoryWatcher<double>>(vars.Flags.Values).ForEach((Action<MemoryWatcher<double>>)(mw => mw.Update(game)));
+	vars.CheckFeedingDogs = (Func<int, int, bool>)((current_state, old_state) =>
+	{
+		if (current_state == old_state)
+		{
+			return false;
+		}
+
+		current_state.ToString();
+
+		foreach (KeyValuePair<string, int> dog in vars.feed_dog_bitfield)
+		{
+			if (vars.IsDogJustFed(current_state, dog))
+			{
+				vars.the_big_one.Add(dog.Key);
+				return true;
+			}
+		}
+
+		return false;
+	});
 }
 
 start {
-  // IGT is measured by frames, 60fps. This starts counting when the game
-  // starts for the first time, and resets when a new game is loaded.
-  // The previous frame count is loaded when a file is loaded as well.
-  if ((current.area_id != 65535 || current.area_id != 0) && current.time < old.time) {
-    vars.kamiki_shinshu = false;
-    vars.taka_kusa = false;
-    vars.kusa_taka = false;
-    vars.coast_city = false;
+	// IGT is measured by frames, 60fps. This starts counting when the game
+	// starts for the first time, and resets when a new game is loaded.
+	// The previous frame count is loaded when a file is loaded as well.
+	if ((current.area_id != 65535 || current.area_id != 0) && current.time < old.time) {
+		vars.kamiki_shinshu = false;
+		vars.taka_kusa = false;
+		vars.kusa_taka = false;
+		vars.coast_city = false;
 
-    return true;
-  } else {
-    return false;
-  };
+		vars.is_running = true;
+
+		return true;
+	} else {
+		return false;
+	};
+}
+
+update {
 }
 
 reset {
-  // Resets if you quit to title or start a new game.
-  return current.area_id == 65535 || current.area_id == 0;
+	vars.the_big_one.Clear();
+	// Resets if you quit to title or start a new game.
+	return vars.is_running && current.area_id == 65535 || current.area_id == 0;
 }
 
 isLoading {
-  // Ensures the timer doesn't start while on the title screen.
-  return current.area_id == 65535 || current.area_id == 0;
+	// Ensures the timer doesn't start while on the title screen.
+	return current.area_id == 65535 || current.area_id == 0;
 }
 
 split
 {
+	if (vars.CheckFeedingDogs(current.feed_dog_bitfield, old.feed_dog_bitfield))
+	{
+		return true;
+	}
 	if ((settings["river_nagi"] && current.area_id == 2 && old.area_id == 30) ||
 	(settings["nagi_river"] && current.area_id == 30 && old.area_id == 2) ||
 	(settings["restore_kamiki"] && current.area_id == 3 && old.area_id == 1) ||
@@ -270,7 +295,7 @@ split
 	(settings["interior_orochi"] && current.area_id == 17 && old.area_id == 16) ||
 	(settings["orochi"] && current.area_id == 17 && current.results_money > old.results_money) ||
 	(settings["checkpoint_coast"] && current.area_id == 75 && old.area_id == 6) ||
-	(settings["holy_eagle"] && (old.movementTech != current.movementTech) && ((current.movementTech & 1) != 0)) ||
+	(settings["holy_eagle"] && (old.movement_tech != current.movement_tech) && ((current.movement_tech & 1) != 0)) ||
 	(settings["dojo_exit"] && current.area_id == 75 && old.area_id == 13) ||
 	(settings["city_digging"] && current.area_id == 32 && old.area_id == 12) ||
 	(settings["city_fishing"] && current.area_id == 31 && old.area_id == 65) ||
@@ -309,48 +334,21 @@ split
 	(settings["yami"] && current.area_id == 62 && current.results_money > old.results_money) ||
 	(settings["final"] && current.final_results > old.final_results && current.final_results == 65536 && current.area_id == 62)) {
 		return true;
-	} else if (settings["kamiki_shinshu"] && current.area_id == 71 && old.area_id == 3 && vars.kamiki_shinshu == false) {
+	}
+	if (settings["kamiki_shinshu"] && current.area_id == 71 && old.area_id == 3 && vars.kamiki_shinshu == false) {
 		vars.kamiki_shinshu = true;
 		return true;
-	} else if (settings["taka_kusa"] && current.area_id == 9 && old.area_id == 74 && vars.taka_kusa == false) {
+	}
+	if (settings["taka_kusa"] && current.area_id == 9 && old.area_id == 74 && vars.taka_kusa == false) {
 		vars.taka_kusa = true;
 		return true;
-	} else if (settings["kusa_taka"] && current.area_id == 74 && old.area_id == 9 && vars.kusa_taka == false) {
+	}
+	if (settings["kusa_taka"] && current.area_id == 74 && old.area_id == 9 && vars.kusa_taka == false) {
 		vars.kusa_taka = true;
 		return true;
-	} else if (settings["coast_city"] && current.area_id == 32 && old.area_id == 75 && vars.coast_city == false) {
+	}
+	if (settings["coast_city"] && current.area_id == 32 && old.area_id == 75 && vars.coast_city == false) {
 		vars.coast_city = true;
 		return true;
 	}
-	// // Only split if we're in-game
-	// if (current.InGame == 1)
-	// {
-	// 	// Split if a flag has changed
-	// 	// Note: Some values count things, like enemies defeated. These will fail silently.
-	// 	foreach (string key in vars.Flags.Keys)
-	// 	{
-	// 		if (vars.Flags[key].Old != vars.Flags[key].Current)
-	// 		{
-	// 			if (vars.Splits.Contains(key))
-	// 			{
-	// 				return false;
-	// 			}
-
-	// 			vars.Splits.Add(key);
-	// 			return settings[key];
-	// 		}
-
-	// 	}
-
-	// 	// Lubella 1
-	// 	if (current.Lubella > 0 && old.Lubella == 0 && current.LevelId == 73)
-	// 	{
-	// 		if (vars.Splits.Contains("lubella1"))
-	// 		{
-	// 			return false;
-	// 		}
-
-	// 		vars.Splits.Add("lubella1");
-	// 		return settings["lubella1"];
-	// 	}
 }
