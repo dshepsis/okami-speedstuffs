@@ -18,6 +18,7 @@ state("Okami")
 	// there is a bonus value on the results screen. For most runners, there
 	// will usually be a value there. Will probably find a better method later.
 	int area_id : "main.dll", 0xB6B2C8;
+	int exit_id : "main.dll", 0xB65E74;
 	int results_money : "main.dll", 0xB1DBA0;
 
 	// Key Items
@@ -31,16 +32,7 @@ state("Okami")
 	int eyeball : "main.dll", 0xB206C8;
 	int horn : "main.dll", 0xB206CA;
 
-	// Bosses
-	int blight2 : "main.dll", 0xB3552C;
-	int crimson_helm2 : "main.dll", 0xB356F4;
-	int ninetails2 : "main.dll", 0xB35610;
-	int orochi3 : "main.dll", 0xB35448;
-	int spider_queen2 : "main.dll", 0xB35364;
-
-	// Tracks which dogs we've fed/fought. Just a simple counter tho so it's not really robust
-	int dog_counter : "main.dll", 0xB6D778, 0x2C;
-
+	// Kusa dogs that you feed. They take up the four most significant bits in this byte.
 	int feed_dog_bitfield : "main.dll", 0xB213C9;
 
 	// Endgame
@@ -132,7 +124,7 @@ startup
 	// Water Dragon
 	settings.Add("dragon", true, "Water Dragon");
 	settings.Add("ncoast_catcall", true, "Enter Catcall Tower", "dragon");
-	settings.Add("exit_catcall", true, "Exit Catcall Tower", "dragon");
+	settings.Add("catcall_coast", true, "Exit Catcall Tower", "dragon");
 	settings.Add("ncoast_dpalace", true, "Enter Dragon Palace", "dragon");
 	settings.Add("dpalace_dragon", false, "Enter Water Dragon", "dragon");
 	settings.Add("dragon_dpalace", true, "Exit Water Dragon", "dragon");
@@ -178,19 +170,15 @@ startup
 
 init
 {
-	// Variables to prevent double-splitting through multiple areas.
-	vars.kamiki_shinshu = false;
-	vars.taka_kusa = false;
-	vars.kusa_taka = false;
-	vars.coast_city = false;
+	IntPtr main_dll = modules.Single(m => m.ModuleName == "main.dll").BaseAddress;
 
 	// Prevents resetting when we haven't even started yet
 	vars.is_running = false;
 
-	// Prevents double-splitting of everything. EVERYTHING.
-	vars.the_big_one = new HashSet<string>();
+	// HashSet to prevent double-splitting
+	HashSet<string> split_done = new HashSet<string>();
 
-	vars.feed_dog_bitfield = new Dictionary<string, int>
+	Dictionary<string, int> feed_dog_bitfield = new Dictionary<string, int>
 	{
 		{"shin", 0x10},
 		{"rei", 0x20},
@@ -198,32 +186,244 @@ init
 		{"chi", 0x80},
 	};
 
-	vars.IsDogJustFed = (Func<int, KeyValuePair<string, int>, bool>)((current_state, dog) =>
+	// TODO: Maybe turn this into a string[,] where each element is of the form
+	// {<setting_name>, <from_area_key>, <to_area_key>}
+	// Where <{from,to}_area_key> maps to the keys in `area_ids`
+	Dictionary<string, int[]> transitions = new Dictionary<string, int[]>
 	{
-		return (settings[dog.Key] &&
-			!vars.the_big_one.Contains(dog.Key) &&
-			(current_state & dog.Value) == dog.Value);
+		{"river_nagi", new int[]{30, 2}},
+		{"nagi_river", new int[]{2, 30}},
+		{"restore_kamiki", new int[]{1, 3}},
+		{"kamiki_shinshu", new int[]{3, 71}},
+		{"shinshu_hana", new int[]{71, 4}},
+		{"hana_shinshu", new int[]{4, 71}},
+		{"shinshu_agata", new int[]{71, 72}},
+		{"agata_fishing", new int[]{67, 72}},
+		{"agata_ruins", new int[]{72, 5}},
+		{"ruins_spider", new int[]{5, 7}},
+		{"agata_taka", new int[]{72, 74}},
+        {"taka_sasa", new int[]{74, 10}},
+        {"sasa_digging", new int[]{12, 10}},
+        {"taka_kusa", new int[]{74, 9}},
+		{"kusa_gale", new int[]{9, 8}},
+        {"gale_crimson", new int[]{8, 14}},
+        {"kusa_taka", new int[]{9, 74}},
+        {"enter_moon_cave", new int[]{73, 17}},
+        {"calcified_moon", new int[]{15, 16}},
+        {"interior_orochi", new int[]{16, 17}},
+        {"checkpoint_coast", new int[]{6, 75}},
+		{"dojo_exit", new int[]{13, 75}},
+		{"coast_city", new int[]{75, 32}},
+        {"city_digging", new int[]{12, 32}},
+        {"city_fishing", new int[]{65, 31}},
+        {"coast_ship", new int[]{75, 36}},
+        {"ship_coast", new int[]{36, 75}},
+        {"palace_garden", new int[]{37, 38}},
+        {"garden_blight", new int[]{38, 42}},
+        {"ncoast_catcall", new int[]{77, 41}},
+        {"catcall_coast", new int[]{41, 75}},
+		{"ncoast_dpalace", new int[]{77, 34}},
+        {"dpalace_dragon", new int[]{34, 35}},
+        {"dragon_dpalace", new int[]{35, 34}},
+		{"ncoast_oni", new int[]{77, 44}},
+        {"oni_ex_oni_int", new int[]{44, 39}},
+        {"oni_interior1", new int[]{39, 46}},
+        {"oni_interior2", new int[]{46, 45}},
+        {"oni_ninetails", new int[]{45, 40}},
+		{"shinshu_kamui", new int[]{71, 78}},
+        {"kamui_wepkeer", new int[]{78, 47}},
+        {"wepkeer_ezofuji", new int[]{47, 79}},
+        {"ezofuji_wawku", new int[]{79, 49}},
+        {"wawku_nechku", new int[]{49, 50}},
+        {"wawku_lechku_nechku", new int[]{49, 64}},
+        {"ezofuji_yamato", new int[]{79, 53}},
+        {"yamato_yami", new int[]{53, 62}},
+	};
+
+	// As mentioned above, the area ID list is at https://docs.google.com/spreadsheets/d/1IoZ1XFeblOTb6Qq9PHfBq1KRdcpgYRz8pTObhF3qMrs/edit?usp=sharing
+	Dictionary<string, int> area_ids = new Dictionary<string, int>
+	{
+		{"loading_screen", 0},
+		{"cursed_kamiki_village", 1},
+		{"cave_of_nagi", 2},
+		{"kamiki_village", 3},
+		{"hana_valley", 4},
+		{"tsuta_ruins", 5},
+		{"city_checkpoint", 6},
+		{"spider_queen", 7},
+		{"gale_shrine", 8},
+		{"kusa_village", 9},
+		{"sasa_sanctuary", 10},
+		{"digging_minigame", 12},
+		{"dojo", 13},
+		{"crimson_helm", 14},
+		{"calcified_cavern", 15},
+		{"moon_cave_interior", 16},
+		{"orochi", 17}, // Listed as "Moon Cave Orochi" in Google Doc
+		{"kamui_demon_trials", 26},
+		{"opening_cutscene", 29},
+		{"river_of_the_heavens", 30},
+		{"sei-an_city_aristocratic_qtr", 31},
+		{"sei-an_city_commoners_qtr", 32},
+		{"queens_palace", 33}, // Old autosplitter checks this for Rao. Test it out.
+		{"dragon_palace", 34},
+		{"inside_the_dragon", 35},
+		{"sunken_ship", 36},
+		{"imperial_palace", 37}, // Old autosplitter checks this for Blight. Test it out.
+		{"imperial_palace_garden", 38},
+		{"oni_island_lower_floors", 39},
+		{"ninetails", 40},
+		{"catcall_tower", 41},
+		{"blight", 42}, // Old autosplitter does NOT check this for Blight. Test it out.
+		{"oni_island_exterior", 44},
+		{"oni_island_upper_floors", 45},
+		{"oni_island_2d_room", 46},
+		{"wep_keer", 47},
+		{"wawku_shrine", 49},
+		{"nechku", 50},
+		{"ponc_tan", 51},
+		{"ark_of_yamato", 53},
+		{"spider_queen_2", 54},
+		{"true_orochi_2", 55},
+		{"blight_2", 56},
+		{"ninetails_2", 57},
+		{"crimson_helm_2", 58},
+		{"yoshpet", 60},
+		{"inner_yoshpet", 61},
+		{"yami", 62},
+		{"wep_keer_square", 63},
+		{"lechku_nechku", 64}, // Listed as "Lechku and Nechku" in Google Doc
+		{"the_living_sword_fishing_minigame", 65},
+		{"agata_fishing_minigame", 67},
+		{"shinshu_field", 71},
+		{"agata_forest", 72},
+		{"moon_cave_entrance", 73},
+		{"taka_pass", 74},
+		{"ryoshima_coast", 75},
+		{"n_ryoshima_coast", 77},
+		{"kamui", 78},
+		{"kamui_ezofuji", 79},
+		{"title_screen", 65535},
+	};
+
+	// We track non-Ark bosses differently, by simply checking for both your area ID and whether you've gotten
+	// more results money. Hopefully we'll find out how to check for boss defeats more directly.
+	// Also this is a misnomer, cuz Yami is included in here. But what can you do.
+	string[] non_ark_bosses = new string[]{
+		"spider_queen",
+		"crimson_helm",
+		"orochi",
+		"blight",
+		"rao", // Old autosplitter checks area_ids.queens_palace for this
+		"ninetails",
+		"nechku",
+		"lechku_nechku",
+		"yami",
+	};
+
+	Dictionary<string, int> ark_bosses = new Dictionary<string, int>{
+		{"blight2", 0xB3552C},
+		{"crimson_helm2", 0xB356F4},
+		{"ninetails2", 0xB35610},
+		{"orochi3", 0xB35448},
+		{"spider_queen2", 0xB35364},
+	};
+
+	Func<int, KeyValuePair<string, int>, bool> _check_dog_fed = ((current_state, dog) =>
+	{
+		return (settings[dog.Key] && (current_state & dog.Value) == dog.Value);
 	});
 
-	vars.CheckFeedingDogs = (Func<int, int, bool>)((current_state, old_state) =>
+	Func<string, bool> _is_set_and_not_done_yet = ((key) => settings[key] && !split_done.Contains(key));
+
+	vars.CheckDogFed = (Func<dynamic, dynamic, bool>)((curr, prev) =>
 	{
-		if (current_state == old_state)
+		if (curr.feed_dog_bitfield == prev.feed_dog_bitfield) return false;
+		foreach (KeyValuePair<string, int> dog in feed_dog_bitfield)
 		{
-			return false;
-		}
-
-		current_state.ToString();
-
-		foreach (KeyValuePair<string, int> dog in vars.feed_dog_bitfield)
-		{
-			if (vars.IsDogJustFed(current_state, dog))
+			if (_check_dog_fed(curr.feed_dog_bitfield, dog))
 			{
-				vars.the_big_one.Add(dog.Key);
 				return true;
 			}
 		}
-
 		return false;
+	});
+
+	vars.CheckRyoBloomed = (Func<dynamic, dynamic, bool>)((curr, prev) =>
+	{
+		return curr.area_id == area_ids["ryoshima_coast"] && curr.exit_id == 0xFF0F0A && prev.exit_id == 0xF09;
+	});
+
+	// TODO: Do the same thing with `vars.CheckArkBossDefeated`
+	vars.CheckItemCollected = (Func<dynamic, dynamic, bool>)((curr, prev) => {
+		return ((settings["canine_tracker"] && curr.canine_tracker > prev.canine_tracker) ||
+			(settings["duty_orb"] && curr.duty_orb > prev.duty_orb) ||
+			(settings["justice_orb"] && curr.justice_orb > prev.justice_orb) ||
+			(settings["loyalty_orb"] && curr.loyalty_orb > prev.loyalty_orb) ||
+			(settings["mask"] && curr.mask > prev.mask) ||
+			(settings["ogre"] && curr.ogre > prev.ogre) ||
+			(settings["lips"] && curr.lips > prev.lips) ||
+			(settings["eyeball"] && curr.eyeball > prev.eyeball) ||
+			(settings["horn"] && curr.horn > prev.horn));
+	});
+
+	vars.CheckInNewArea = (Func<dynamic, dynamic, bool>)((curr, prev) =>
+	{
+		foreach (KeyValuePair<string, int[]> transition in transitions)
+		{
+			if (_is_set_and_not_done_yet(transition.Key) && prev.area_id == transition.Value[0] && curr.area_id == transition.Value[1])
+			{
+				split_done.Add(transition.Key);
+				return true;
+			}
+		}
+		return false;
+	});
+
+	vars.CheckHolyEagleObtained = (Func<dynamic, bool>)((curr) => {
+		if (_is_set_and_not_done_yet("holy_eagle") && ((curr.movement_tech & 1) == 1))
+		{
+			split_done.Add("holy_eagle");
+			return true;
+		}
+		return false;
+	});
+
+	vars.CheckNonArkBossDefeated = (Func<dynamic, dynamic, bool>)((curr, prev) =>
+	{
+		foreach (string boss in non_ark_bosses)
+		{
+			if (_is_set_and_not_done_yet(boss) && curr.area_id == area_ids[boss] && curr.results_money > prev.results_money)
+			{
+				return true;
+			}
+		}
+		return false;
+	});
+
+	vars.CheckArkBossDefeated = (Func<dynamic, dynamic, bool>)((curr, prev) =>
+	{
+		foreach (KeyValuePair<string, int> boss in ark_bosses)
+		{
+			if (_is_set_and_not_done_yet(boss.Key) && memory.ReadValue<int>(main_dll + boss.Value) == 0x112A880)
+			{
+				split_done.Add(boss.Key);
+				return true;
+			}
+		}
+		return false;
+	});
+
+	vars.CheckGameDone = (Func<dynamic, dynamic, bool>)((curr, prev) =>
+	{
+		return settings["final"] && curr.final_results > prev.final_results && curr.final_results == 65536 && current.area_id == area_ids["yami"];
+	});
+
+	vars.ClearSplitDoneSet = (Action)(() => split_done.Clear());
+
+	vars.IsInLoadingOrTitleScreen = (Func<int, bool>)((current_area_id) =>
+	{
+		return (current_area_id == area_ids["title_screen"] || current_area_id == area_ids["loading_screen"]);
 	});
 }
 
@@ -249,106 +449,25 @@ update {
 }
 
 reset {
-	vars.the_big_one.Clear();
-	// Resets if you quit to title or start a new game.
-	return vars.is_running && current.area_id == 65535 || current.area_id == 0;
+	vars.ClearSplitDoneSet();
+	return vars.is_running && vars.IsInLoadingOrTitleScreen(current.area_id);
 }
 
 isLoading {
 	// Ensures the timer doesn't start while on the title screen.
-	return current.area_id == 65535 || current.area_id == 0;
+	return vars.IsInLoadingOrTitleScreen(current.area_id);
 }
 
 split
 {
-	if (vars.CheckFeedingDogs(current.feed_dog_bitfield, old.feed_dog_bitfield))
-	{
-		return true;
-	}
-	if ((settings["river_nagi"] && current.area_id == 2 && old.area_id == 30) ||
-	(settings["nagi_river"] && current.area_id == 30 && old.area_id == 2) ||
-	(settings["restore_kamiki"] && current.area_id == 3 && old.area_id == 1) ||
-	(settings["shinshu_hana"] && current.area_id == 4 && old.area_id == 71) ||
-	(settings["hana_shinshu"] && current.area_id == 71 && old.area_id == 4) ||
-	(settings["shinshu_agata"] && current.area_id == 72 && old.area_id == 71) ||
-	(settings["agata_fishing"] && current.area_id == 72 && old.area_id == 67) ||
-	(settings["agata_ruins"] && current.area_id == 5 && old.area_id == 72) ||
-	(settings["ruins_spider"] && current.area_id == 7 && old.area_id == 5) ||
-	(settings["spider_queen"] && current.area_id == 7 && current.results_money > old.results_money) ||
-	(settings["agata_taka"] && current.area_id == 74 && old.area_id == 72) ||
-	(settings["canine_tracker"] && current.canine_tracker > old.canine_tracker) ||
-	(settings["taka_sasa"] && current.area_id == 10 && old.area_id == 74) ||
-	(settings["sasa_digging"] && current.area_id == 10 && old.area_id == 12) ||
-	(settings["duty_orb"] && current.duty_orb > old.duty_orb) ||
-	(settings["justice_orb"] && current.justice_orb > old.justice_orb) ||
-	(settings["loyalty_orb"] && current.loyalty_orb > old.loyalty_orb) ||
-	(settings["kusa_gale"] && current.area_id == 8 && old.area_id == 9) ||
-	(settings["gale_crimson"] && current.area_id == 14 && old.area_id == 8) ||
-	(settings["crimson_helm"] && current.area_id == 14 && current.results_money > old.results_money) ||
-	(settings["enter_moon_cave"] && current.area_id == 17 && old.area_id == 73) ||
-	(settings["mask"] && current.mask > old.mask) ||
-	(settings["calcified_moon"] && current.area_id == 16 && old.area_id == 15) ||
-	(settings["ogre"] && current.ogre > old.ogre) ||
-	(settings["lips"] && current.lips > old.lips) ||
-	(settings["eyeball"] && current.eyeball > old.eyeball) ||
-	(settings["horn"] && current.horn > old.horn) ||
-	(settings["interior_orochi"] && current.area_id == 17 && old.area_id == 16) ||
-	(settings["orochi"] && current.area_id == 17 && current.results_money > old.results_money) ||
-	(settings["checkpoint_coast"] && current.area_id == 75 && old.area_id == 6) ||
-	(settings["holy_eagle"] && (old.movement_tech != current.movement_tech) && ((current.movement_tech & 1) != 0)) ||
-	(settings["dojo_exit"] && current.area_id == 75 && old.area_id == 13) ||
-	(settings["city_digging"] && current.area_id == 32 && old.area_id == 12) ||
-	(settings["city_fishing"] && current.area_id == 31 && old.area_id == 65) ||
-	(settings["coast_ship"] && current.area_id == 36 && old.area_id == 75) ||
-	(settings["ship_coast"] && current.area_id == 75 && old.area_id == 36) ||
-	(settings["palace_garden"] && current.area_id == 38 && old.area_id == 37) ||
-	(settings["garden_blight"] && current.area_id == 42 && old.area_id == 38) ||
-	(settings["blight"] && current.area_id == 37 && current.results_money > old.results_money) ||
-	(settings["ncoast_catcall"] && current.area_id == 41 && old.area_id == 77) ||
-	(settings["exit_catcall"] && current.area_id != 41 && old.area_id == 41) ||
-	(settings["ncoast_dpalace"] && current.area_id == 34 && old.area_id == 77) ||
-	(settings["dpalace_dragon"] && current.area_id == 35 && old.area_id == 34) ||
-	(settings["dragon_dpalace"] && current.area_id == 34 && old.area_id == 35) ||
-	(settings["rao"] && current.area_id == 33 && current.results_money > old.results_money) ||
-	(settings["ncoast_oni"] && current.area_id == 44 && old.area_id == 77) ||
-	(settings["oni_ex_oni_int"] && current.area_id == 39 && old.area_id == 44) ||
-	(settings["oni_interior1"] && current.area_id == 46 && old.area_id == 39) ||
-	(settings["oni_interior2"] && current.area_id == 45 && old.area_id == 46) ||
-	(settings["oni_ninetails"] && current.area_id == 40 && old.area_id == 45) ||
-	(settings["ninetails"] && current.area_id == 40 && current.results_money > old.results_money) ||
-	(settings["shinshu_kamui"] && current.area_id == 78 && old.area_id == 71) ||
-	(settings["kamui_wepkeer"] && current.area_id == 47 && old.area_id == 78) ||
-	(settings["wepkeer_ezofuji"] && current.area_id == 79 && old.area_id == 47) ||
-	(settings["ezofuji_wawku"] && current.area_id == 49 && old.area_id == 79) ||
-	(settings["wawku_nechku"] && current.area_id == 50 && old.area_id == 49) ||
-	(settings["nechku"] && current.area_id == 50 && current.results_money > old.results_money) ||
-	(settings["wawku_lechku_nechku"] && current.area_id == 64 && old.area_id == 49) ||
-	(settings["lechku_nechku"] && current.area_id == 64 && current.results_money > old.results_money) ||
-	(settings["ezofuji_yamato"] && current.area_id == 53 && old.area_id == 79) ||
-	(settings["ninetails2"] && old.ninetails2 == 0 && current.ninetails2 == 0x112A880) ||
-	(settings["crimson_helm2"] && old.crimson_helm2 == 0 && current.crimson_helm2 == 0x112A880) ||
-	(settings["spider_queen2"] && old.spider_queen2 == 0 && current.spider_queen2 == 0x112A880) ||
-	(settings["orochi3"] && old.orochi3 == 0 && current.orochi3 == 0x112A880) ||
-	(settings["blight2"] && old.blight2 == 0 && current.blight2 == 0x112A880) ||
-	(settings["yamato_yami"] && current.area_id == 62 && old.area_id == 53) ||
-	(settings["yami"] && current.area_id == 62 && current.results_money > old.results_money) ||
-	(settings["final"] && current.final_results > old.final_results && current.final_results == 65536 && current.area_id == 62)) {
-		return true;
-	}
-	if (settings["kamiki_shinshu"] && current.area_id == 71 && old.area_id == 3 && vars.kamiki_shinshu == false) {
-		vars.kamiki_shinshu = true;
-		return true;
-	}
-	if (settings["taka_kusa"] && current.area_id == 9 && old.area_id == 74 && vars.taka_kusa == false) {
-		vars.taka_kusa = true;
-		return true;
-	}
-	if (settings["kusa_taka"] && current.area_id == 74 && old.area_id == 9 && vars.kusa_taka == false) {
-		vars.kusa_taka = true;
-		return true;
-	}
-	if (settings["coast_city"] && current.area_id == 32 && old.area_id == 75 && vars.coast_city == false) {
-		vars.coast_city = true;
-		return true;
-	}
+	return (
+		(vars.CheckInNewArea(current, old)) ||
+		(vars.CheckItemCollected(current, old)) ||
+		(vars.CheckDogFed(current, old)) ||
+		(vars.CheckRyoBloomed(current, old)) ||
+		(vars.CheckHolyEagleObtained(current, old)) ||
+		(vars.CheckNonArkBossDefeated(current, old)) ||
+		(vars.CheckArkBossDefeated(current, old)) ||
+		(vars.CheckGameDone(current, old))
+	);
 }
