@@ -8,8 +8,8 @@ This repo includes:
 
 ## Resources
 
-[Okami Leaderboard](https://www.speedrun.com/Okami)  
-[Okami Speedrunning Discord](https://discord.gg/AQNKmMu)
+[Ōkami Leaderboard](https://www.speedrun.com/Okami)  
+[Ōkami Speedrunning Discord](https://discord.gg/AQNKmMu)
 
 ## Contributors
 
