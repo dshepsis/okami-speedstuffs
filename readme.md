@@ -14,6 +14,6 @@ This repo includes:
 ## Contributors
 
 [Cielos](http://fearlessrevolution.com/viewtopic.php?t=5629) for the original cheat table  
-[Lyriati](https://www.twitch.tv/lyriati)  
+[Lyriati](https://www.github.com/lyriati)  
 [rekyuu](https://www.twitch.tv/rekyuus)
 <br />And me
