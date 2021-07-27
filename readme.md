@@ -32,4 +32,5 @@ The teleport input takes the format `<x, y, z>` or `<x y z>`. You can have any c
 [Cielos](http://fearlessrevolution.com/viewtopic.php?t=5629) for the original cheat table  
 [Lyriati](https://www.github.com/lyriati)  
 [rekyuu](https://www.twitch.tv/rekyuus)
+[Auride](https://github.com/dshepsis)
 <br />And me
