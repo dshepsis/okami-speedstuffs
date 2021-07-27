@@ -93,16 +93,17 @@ startup
 	settings.Add("interior_orochi", false, "Enter Orochi", "moon_cave");
 	settings.Add("orochi", true, "Defeat Orochi", "moon_cave");
 
-	// Ghost Ship
-	settings.Add("ghost", true, "Ryoshima Coast");
-	settings.Add("checkpoint_coast", true, "Exit City Checkpoint", "ghost");
-	settings.Add("holy_eagle", true, "Attain Holy Eagle", "ghost");
-	settings.Add("dojo_exit", false, "Exit Dojo", "ghost");
-	settings.Add("coast_city", false, "Enter Sei-an City", "ghost");
-	settings.Add("city_digging", true, "Sei-an City Digging Minigame", "ghost");
-	settings.Add("city_fishing", true, "Sei-an City Fishing Minigame", "ghost");
-	settings.Add("coast_ship", true, "Enter Ghost Ship", "ghost");
-	settings.Add("ship_coast", true, "Exit Ghost Ship", "ghost");
+	// Ryoshima Coast/Sei-An
+	settings.Add("ryo", true, "Ryoshima Coast");
+	settings.Add("checkpoint_coast", true, "Exit City Checkpoint", "ryo");
+	settings.Add("bloom_ryo", true, "Bloom Ryoshima Coast", "ryo");
+	settings.Add("holy_eagle", true, "Attain Holy Eagle", "ryo");
+	settings.Add("dojo_exit", false, "Exit Dojo", "ryo");
+	settings.Add("coast_city", false, "Enter Sei-an City", "ryo");
+	settings.Add("city_digging", true, "Sei-an City Digging Minigame", "ryo");
+	settings.Add("city_fishing", true, "Sei-an City Fishing Minigame", "ryo");
+	settings.Add("coast_ship", true, "Enter Ghost Ship", "ryo");
+	settings.Add("ship_coast", true, "Exit Ghost Ship", "ryo");
 
 	// Imperial Palace
 	settings.Add("palace", true, "Imperial Palace");
@@ -161,11 +162,9 @@ init
 {
 	IntPtr mainDll = modules.Single(m => m.ModuleName == "main.dll").BaseAddress;
 
-	// Prevents resetting when we haven't even started yet
-	vars.isRunning = false;
-
-	// HashSet to prevent double-splitting
-	HashSet<string> splitDone = new HashSet<string>();
+	// HashSet to prevent double-splitting.
+	// Wish I could keep this internal to `startup`, but LiveSplit gives you a brand new `HashSet` every cycle then, defeating the purpose of this exercise.
+	vars.splitDone = new HashSet<string>();
 
 	Dictionary<string, int> keyItems = new Dictionary<string, int>
 	{
@@ -308,13 +307,13 @@ init
 	// We track non-Ark bosses differently, by simply checking for both your area ID and whether you've gotten
 	// more results money. Hopefully we'll find out how to check for boss defeats more directly.
 	// Also this is a misnomer, cuz Yami is included in here. But what can you do.
-	string[] nonArkBosses = new string[9]
+	string[] nonArkBosses = new string[8]
 	{
 		"spider_queen",
 		"crimson_helm",
 		"orochi",
 		"blight",
-		"rao", // Old autosplitter checks areaIds.queens_palace for this
+		// "rao", // Old autosplitter checks areaIds.queens_palace for this
 		"ninetails",
 		"nechku",
 		"lechku_nechku",
@@ -334,91 +333,88 @@ init
 		return (settings[dog.Key] && (current_state & dog.Value) == dog.Value);
 	};
 
-	Func<string, bool> _IsSetAndNotDoneYet = (key) => settings[key] && !splitDone.Contains(key);
+	Func<string, bool> _IsSetAndNotDoneYet = (key) => settings[key] && !vars.splitDone.Contains(key);
 
-	vars.CheckDogFed = (Func<dynamic, dynamic, bool>)((curr, prev) =>
+	vars.CheckDogFed = (Func<dynamic, dynamic, string>)((curr, prev) =>
 	{
-		if (curr.feedDogBitfield == prev.feedDogBitfield) return false;
+		if (curr.feedDogBitfield == prev.feedDogBitfield) return null;
 		foreach (KeyValuePair<string, int> dog in feedDogBitfield)
 		{
 			if (_CheckDogFed(curr.feedDogBitfield, dog))
 			{
-				return true;
+				return dog.Key;
 			}
 		}
-		return false;
+		return null;
 	});
 
-	vars.CheckRyoBloomed = (Func<dynamic, dynamic, bool>)((curr, prev) =>
+	vars.CheckRyoBloomed = (Func<dynamic, dynamic, string>)((curr, prev) =>
 	{
-		return curr.areaId == areaIds["ryoshima_coast"] && curr.exitId == 0xFF0F0A && prev.exitId == 0xF09;
+		return (_IsSetAndNotDoneYet("bloom_ryo")
+			&& curr.areaId == areaIds["ryoshima_coast"]
+			&& curr.exitId == 0xFF0F0A
+			&& prev.exitId == 0xF09) ? "bloom_ryo" : null;
 	});
 
-	vars.CheckItemCollected = (Func<bool>)(() => {
+	vars.CheckItemCollected = (Func<string>)(() => {
 		foreach (KeyValuePair<string, int>item in keyItems)
 		{
 			if (_IsSetAndNotDoneYet(item.Key) && memory.ReadValue<ushort>(mainDll + item.Value) == 1)
 			{
-				splitDone.Add(item.Key);
-				return true;
+				return item.Key;
 			}
 		}
-		return false;
+		return null;
 	});
 
-	vars.CheckInNewArea = (Func<dynamic, dynamic, bool>)((curr, prev) =>
+	vars.CheckInNewArea = (Func<dynamic, dynamic, string>)((curr, prev) =>
 	{
 		for (int i = 0; i < 47; i++)
 		{
 			if (_IsSetAndNotDoneYet(levelTransitions[i, 0]) && prev.areaId == areaIds[levelTransitions[i, 1]] && curr.areaId == areaIds[levelTransitions[i, 2]])
 			{
-				splitDone.Add(levelTransitions[i, 0]);
-				return true;
+				return levelTransitions[i, 0];
 			}
 		}
-		return false;
+		return null;
 	});
 
-	vars.CheckHolyEagleObtained = (Func<dynamic, bool>)((curr) => {
+	vars.CheckHolyEagleObtained = (Func<dynamic, string>)((curr) => {
 		if (_IsSetAndNotDoneYet("holy_eagle") && ((curr.movementTech & 1) == 1))
 		{
-			splitDone.Add("holy_eagle");
-			return true;
+			return "holy_eagle";
 		}
-		return false;
+		return null;
 	});
 
-	vars.CheckNonArkBossDefeated = (Func<dynamic, dynamic, bool>)((curr, prev) =>
+	vars.CheckNonArkBossDefeated = (Func<dynamic, dynamic, string>)((curr, prev) =>
 	{
 		foreach (string boss in nonArkBosses)
 		{
 			if (_IsSetAndNotDoneYet(boss) && curr.areaId == areaIds[boss] && curr.resultsMoney > prev.resultsMoney)
 			{
-				return true;
+				return boss;
 			}
 		}
-		return false;
+		return null;
 	});
 
-	vars.CheckArkBossDefeated = (Func<bool>)(() =>
+	vars.CheckArkBossDefeated = (Func<string>)(() =>
 	{
 		foreach (KeyValuePair<string, int> boss in arkBosses)
 		{
 			if (_IsSetAndNotDoneYet(boss.Key) && memory.ReadValue<int>(mainDll + boss.Value) == 0x112A880)
 			{
-				splitDone.Add(boss.Key);
-				return true;
+				return boss.Key;
 			}
 		}
-		return false;
+		return null;
 	});
 
 	vars.CheckGameDone = (Func<dynamic, dynamic, bool>)((curr, prev) =>
 	{
 		return settings["final"] && curr.finalResults > prev.finalResults && curr.finalResults == 65536 && current.areaId == areaIds["yami"];
 	});
-
-	vars.ClearSplitDoneSet = (Action)(() => splitDone.Clear());
 
 	vars.IsInLoadingOrTitleScreen = (Func<int, bool>)((current_areaId) =>
 	{
@@ -430,26 +426,16 @@ start {
 	// IGT is measured by frames, 60fps. This starts counting when the game
 	// starts for the first time, and resets when a new game is loaded.
 	// The previous frame count is loaded when a file is loaded as well.
-	if ((current.areaId != 65535 || current.areaId != 0) && current.time < old.time) {
-		vars.kamiki_shinshu = false;
-		vars.taka_kusa = false;
-		vars.kusa_taka = false;
-		vars.coast_city = false;
-
-		vars.isRunning = true;
-
-		return true;
-	} else {
-		return false;
-	};
-}
-
-update {
+	return ((current.areaId != 65535 || current.areaId != 0) && current.time < old.time);
 }
 
 reset {
-	vars.ClearSplitDoneSet();
-	return vars.isRunning && vars.IsInLoadingOrTitleScreen(current.areaId);
+	if (vars.IsInLoadingOrTitleScreen(current.areaId))
+	{
+		vars.splitDone.Clear();
+		return true;
+	}
+	return false;
 }
 
 isLoading {
@@ -459,19 +445,25 @@ isLoading {
 
 split
 {
-	return (
-		(vars.CheckInNewArea(current, old)) ||
-		(vars.CheckItemCollected()) ||
-		(vars.CheckDogFed(current, old)) ||
-		(vars.CheckRyoBloomed(current, old)) ||
-		(vars.CheckHolyEagleObtained(current, old)) ||
-		(vars.CheckNonArkBossDefeated(current, old)) ||
-		(vars.CheckArkBossDefeated()) ||
-		(vars.CheckGameDone(current, old))
-	);
+	string key;
+	if ((key = (
+		vars.CheckInNewArea(current, old)
+		?? vars.CheckItemCollected()
+		?? vars.CheckDogFed(current, old)
+		?? vars.CheckRyoBloomed(current, old)
+		?? vars.CheckHolyEagleObtained(current)
+		?? vars.CheckNonArkBossDefeated(current, old)
+		?? vars.CheckArkBossDefeated()
+	)) != null)
+	{
+		vars.splitDone.Add(key);
+		return true;
+	}
+
+	return vars.CheckGameDone(current, old);
 }
 
 exit {
-	// Just in case
-	vars.ClearSplitDoneSet();
+	// Ditto
+	vars.splitDone.Clear();
 }
