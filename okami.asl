@@ -4,41 +4,30 @@ state("Okami")
 	// IGT is measured by frames in game. Time will start if you started a new
 	// game from the title menu, or by loading a NG+ file.
 	int time : "main.dll", 0xB217FC;
-	int minigame_timer : "main.dll", 0xB1DC5C;
+	int minigameTimer : "main.dll", 0xB1DC5C;
 
 	// For Holy Eagle, Digging Champ, etc.
-	byte movement_tech : "main.dll", 0xB4DFA2;
+	byte movementTech : "main.dll", 0xB4DFA2;
 
-	bool game_pause_boolean : "flower_kernel.m2::render::Context::_pCurrentContext", 0x44;
+	bool gamePauseBoolean : "flower_kernel.m2::render::Context::_pCurrentContext", 0x44;
 
 	// Multi-use flags
 	// Area ID list: https://docs.google.com/spreadsheets/d/1IoZ1XFeblOTb6Qq9PHfBq1KRdcpgYRz8pTObhF3qMrs/edit?usp=sharing
-	// `results_money` will be used to signify boss fights have ended in
+	// `resultsMoney` will be used to signify boss fights have ended in
 	// specific areas. The issue with this value is that it only triggers when
 	// there is a bonus value on the results screen. For most runners, there
 	// will usually be a value there. Will probably find a better method later.
-	int area_id : "main.dll", 0xB6B2C8;
-	int exit_id : "main.dll", 0xB65E74;
-	int results_money : "main.dll", 0xB1DBA0;
-
-	// Key Items
-	int canine_tracker : "main.dll", 0xB206B4;
-	int duty_orb : "main.dll", 0xB206D0;
-	int justice_orb : "main.dll", 0xB206CE;
-	int loyalty_orb : "main.dll", 0xB206CC;
-	int mask : "main.dll", 0xB206C2;
-	int ogre : "main.dll", 0xB206C4;
-	int lips : "main.dll", 0xB206C6;
-	int eyeball : "main.dll", 0xB206C8;
-	int horn : "main.dll", 0xB206CA;
+	int areaId : "main.dll", 0xB6B2C8;
+	int exitId : "main.dll", 0xB65E74;
+	int resultsMoney : "main.dll", 0xB1DBA0;
 
 	// Kusa dogs that you feed. They take up the four most significant bits in this byte.
-	int feed_dog_bitfield : "main.dll", 0xB213C9;
+	int feedDogBitfield : "main.dll", 0xB213C9;
 
 	// Endgame
 	// Timing ends on the "Final Results" screen for IGT.
 	// Other possible final result values: https://my.mixtape.moe/aeoxal.png
-	int final_results : "main.dll", 0xB5262C;
+	int finalResults : "main.dll", 0xB5262C;
 }
 
 startup
@@ -96,7 +85,7 @@ startup
 	settings.Add("moon_cave", true, "Moon Cave");
 	settings.Add("enter_moon_cave", true, "Enter Moon Cave", "moon_cave");
 	settings.Add("mask", false, "Get Mask", "moon_cave");
-	settings.Add("calcified_moon", false, "Exit Calcified Cavern", "moon_cave");
+	settings.Add("calcified_interior", false, "Exit Calcified Cavern", "moon_cave");
 	settings.Add("ogre", true, "Get Ogre Liver", "moon_cave");
 	settings.Add("lips", true, "Get Lips of Ice", "moon_cave");
 	settings.Add("eyeball", true, "Get Eyeball of Fire", "moon_cave");
@@ -170,15 +159,28 @@ startup
 
 init
 {
-	IntPtr main_dll = modules.Single(m => m.ModuleName == "main.dll").BaseAddress;
+	IntPtr mainDll = modules.Single(m => m.ModuleName == "main.dll").BaseAddress;
 
 	// Prevents resetting when we haven't even started yet
-	vars.is_running = false;
+	vars.isRunning = false;
 
 	// HashSet to prevent double-splitting
-	HashSet<string> split_done = new HashSet<string>();
+	HashSet<string> splitDone = new HashSet<string>();
 
-	Dictionary<string, int> feed_dog_bitfield = new Dictionary<string, int>
+	Dictionary<string, int> keyItems = new Dictionary<string, int>
+	{
+		{"canine_tracker", 0xB206B4},
+		{"duty_orb", 0xB206D0},
+		{"justice_orb", 0xB206CE},
+		{"loyalty_orb", 0xB206CC},
+		{"mask", 0xB206C2},
+		{"ogre", 0xB206C4},
+		{"lips", 0xB206C6},
+		{"eyeball", 0xB206C8},
+		{"horn", 0xB206CA},
+	};
+
+	Dictionary<string, int> feedDogBitfield = new Dictionary<string, int>
 	{
 		{"shin", 0x10},
 		{"rei", 0x20},
@@ -186,62 +188,8 @@ init
 		{"chi", 0x80},
 	};
 
-	// TODO: Maybe turn this into a string[,] where each element is of the form
-	// {<setting_name>, <from_area_key>, <to_area_key>}
-	// Where <{from,to}_area_key> maps to the keys in `area_ids`
-	Dictionary<string, int[]> transitions = new Dictionary<string, int[]>
-	{
-		{"river_nagi", new int[]{30, 2}},
-		{"nagi_river", new int[]{2, 30}},
-		{"restore_kamiki", new int[]{1, 3}},
-		{"kamiki_shinshu", new int[]{3, 71}},
-		{"shinshu_hana", new int[]{71, 4}},
-		{"hana_shinshu", new int[]{4, 71}},
-		{"shinshu_agata", new int[]{71, 72}},
-		{"agata_fishing", new int[]{67, 72}},
-		{"agata_ruins", new int[]{72, 5}},
-		{"ruins_spider", new int[]{5, 7}},
-		{"agata_taka", new int[]{72, 74}},
-        {"taka_sasa", new int[]{74, 10}},
-        {"sasa_digging", new int[]{12, 10}},
-        {"taka_kusa", new int[]{74, 9}},
-		{"kusa_gale", new int[]{9, 8}},
-        {"gale_crimson", new int[]{8, 14}},
-        {"kusa_taka", new int[]{9, 74}},
-        {"enter_moon_cave", new int[]{73, 17}},
-        {"calcified_moon", new int[]{15, 16}},
-        {"interior_orochi", new int[]{16, 17}},
-        {"checkpoint_coast", new int[]{6, 75}},
-		{"dojo_exit", new int[]{13, 75}},
-		{"coast_city", new int[]{75, 32}},
-        {"city_digging", new int[]{12, 32}},
-        {"city_fishing", new int[]{65, 31}},
-        {"coast_ship", new int[]{75, 36}},
-        {"ship_coast", new int[]{36, 75}},
-        {"palace_garden", new int[]{37, 38}},
-        {"garden_blight", new int[]{38, 42}},
-        {"ncoast_catcall", new int[]{77, 41}},
-        {"catcall_coast", new int[]{41, 75}},
-		{"ncoast_dpalace", new int[]{77, 34}},
-        {"dpalace_dragon", new int[]{34, 35}},
-        {"dragon_dpalace", new int[]{35, 34}},
-		{"ncoast_oni", new int[]{77, 44}},
-        {"oni_ex_oni_int", new int[]{44, 39}},
-        {"oni_interior1", new int[]{39, 46}},
-        {"oni_interior2", new int[]{46, 45}},
-        {"oni_ninetails", new int[]{45, 40}},
-		{"shinshu_kamui", new int[]{71, 78}},
-        {"kamui_wepkeer", new int[]{78, 47}},
-        {"wepkeer_ezofuji", new int[]{47, 79}},
-        {"ezofuji_wawku", new int[]{79, 49}},
-        {"wawku_nechku", new int[]{49, 50}},
-        {"wawku_lechku_nechku", new int[]{49, 64}},
-        {"ezofuji_yamato", new int[]{79, 53}},
-        {"yamato_yami", new int[]{53, 62}},
-	};
-
 	// As mentioned above, the area ID list is at https://docs.google.com/spreadsheets/d/1IoZ1XFeblOTb6Qq9PHfBq1KRdcpgYRz8pTObhF3qMrs/edit?usp=sharing
-	Dictionary<string, int> area_ids = new Dictionary<string, int>
+	Dictionary<string, int> areaIds = new Dictionary<string, int>
 	{
 		{"loading_screen", 0},
 		{"cursed_kamiki_village", 1},
@@ -306,22 +254,74 @@ init
 		{"title_screen", 65535},
 	};
 
+	string[,] levelTransitions = new string[47, 3]
+	{
+		{"river_nagi", "river_of_the_heavens", "cave_of_nagi"},
+		{"nagi_river", "cave_of_nagi", "river_of_the_heavens"},
+		{"restore_kamiki", "cursed_kamiki_village", "kamiki_village"},
+		{"kamiki_shinshu", "kamiki_village", "shinshu_field"},
+		{"shinshu_hana", "shinshu_field", "hana_valley"},
+		{"hana_shinshu", "hana_valley", "shinshu_field"},
+		{"shinshu_agata", "shinshu_field", "agata_forest"},
+		{"agata_fishing", "agata_fishing_minigame", "agata_forest"},
+		{"agata_ruins", "agata_forest", "tsuta_ruins"},
+		{"ruins_spider", "tsuta_ruins", "spider_queen"},
+		{"agata_taka", "agata_forest", "taka_pass"},
+        {"taka_sasa", "taka_pass", "sasa_sanctuary"},
+        {"sasa_digging", "digging_minigame", "sasa_sanctuary"},
+        {"taka_kusa", "taka_pass", "kusa_village"},
+		{"kusa_gale", "kusa_village", "gale_shrine"},
+        {"gale_crimson", "gale_shrine", "crimson_helm"},
+        {"kusa_taka", "kusa_village", "taka_pass"},
+        {"enter_moon_cave", "moon_cave_entrance", "orochi"},
+        {"calcified_interior", "calcified_cavern", "moon_cave_interior"},
+        {"interior_orochi", "moon_cave_interior", "orochi"},
+        {"checkpoint_coast", "city_checkpoint", "ryoshima_coast"},
+		{"dojo_exit", "dojo", "ryoshima_coast"},
+		{"coast_city", "ryoshima_coast", "sei-an_city_commoners_qtr"},
+        {"city_digging", "sei-an_city_commoners_qtr", "digging_minigame"},
+        {"city_fishing", "sei-an_city_aristocratic_qtr", "the_living_sword_fishing_minigame"},
+        {"coast_ship", "ryoshima_coast", "sunken_ship"},
+        {"ship_coast", "sunken_ship", "ryoshima_coast"},
+        {"palace_garden", "imperial_palace", "imperial_palace_garden"},
+        {"garden_blight", "imperial_palace_garden", "blight"},
+        {"ncoast_catcall", "n_ryoshima_coast", "catcall_tower"},
+        {"catcall_coast", "catcall_tower", "ryoshima_coast"},
+		{"ncoast_dpalace", "n_ryoshima_coast", "dragon_palace"},
+        {"dpalace_dragon", "dragon_palace", "inside_the_dragon"},
+        {"dragon_dpalace", "inside_the_dragon", "dragon_palace"},
+		{"ncoast_oni", "n_ryoshima_coast", "oni_island_exterior"},
+        {"oni_ex_oni_int", "oni_island_exterior", "oni_island_lower_floors"},
+        {"oni_interior1", "oni_island_lower_floors", "oni_island_2d_room"},
+        {"oni_interior2", "oni_island_2d_room", "oni_island_upper_floors"},
+        {"oni_ninetails", "oni_island_upper_floors", "ninetails"},
+		{"shinshu_kamui", "shinshu_field", "kamui"},
+        {"kamui_wepkeer", "kamui", "wep_keer"},
+        {"wepkeer_ezofuji", "wep_keer", "kamui_ezofuji"},
+        {"ezofuji_wawku", "kamui_ezofuji", "wawku_shrine"},
+        {"wawku_nechku", "wawku_shrine", "nechku"},
+        {"wawku_lechku_nechku", "wawku_shrine", "lechku_nechku"},
+        {"ezofuji_yamato", "kamui_ezofuji", "ark_of_yamato"},
+        {"yamato_yami", "ark_of_yamato", "yami"},
+	};
+
 	// We track non-Ark bosses differently, by simply checking for both your area ID and whether you've gotten
 	// more results money. Hopefully we'll find out how to check for boss defeats more directly.
 	// Also this is a misnomer, cuz Yami is included in here. But what can you do.
-	string[] non_ark_bosses = new string[]{
+	string[] nonArkBosses = new string[9]
+	{
 		"spider_queen",
 		"crimson_helm",
 		"orochi",
 		"blight",
-		"rao", // Old autosplitter checks area_ids.queens_palace for this
+		"rao", // Old autosplitter checks areaIds.queens_palace for this
 		"ninetails",
 		"nechku",
 		"lechku_nechku",
 		"yami",
 	};
 
-	Dictionary<string, int> ark_bosses = new Dictionary<string, int>{
+	Dictionary<string, int> arkBosses = new Dictionary<string, int>{
 		{"blight2", 0xB3552C},
 		{"crimson_helm2", 0xB356F4},
 		{"ninetails2", 0xB35610},
@@ -329,19 +329,19 @@ init
 		{"spider_queen2", 0xB35364},
 	};
 
-	Func<int, KeyValuePair<string, int>, bool> _check_dog_fed = ((current_state, dog) =>
+	Func<int, KeyValuePair<string, int>, bool> _CheckDogFed = (current_state, dog) =>
 	{
 		return (settings[dog.Key] && (current_state & dog.Value) == dog.Value);
-	});
+	};
 
-	Func<string, bool> _is_set_and_not_done_yet = ((key) => settings[key] && !split_done.Contains(key));
+	Func<string, bool> _IsSetAndNotDoneYet = (key) => settings[key] && !splitDone.Contains(key);
 
 	vars.CheckDogFed = (Func<dynamic, dynamic, bool>)((curr, prev) =>
 	{
-		if (curr.feed_dog_bitfield == prev.feed_dog_bitfield) return false;
-		foreach (KeyValuePair<string, int> dog in feed_dog_bitfield)
+		if (curr.feedDogBitfield == prev.feedDogBitfield) return false;
+		foreach (KeyValuePair<string, int> dog in feedDogBitfield)
 		{
-			if (_check_dog_fed(curr.feed_dog_bitfield, dog))
+			if (_CheckDogFed(curr.feedDogBitfield, dog))
 			{
 				return true;
 			}
@@ -351,29 +351,28 @@ init
 
 	vars.CheckRyoBloomed = (Func<dynamic, dynamic, bool>)((curr, prev) =>
 	{
-		return curr.area_id == area_ids["ryoshima_coast"] && curr.exit_id == 0xFF0F0A && prev.exit_id == 0xF09;
+		return curr.areaId == areaIds["ryoshima_coast"] && curr.exitId == 0xFF0F0A && prev.exitId == 0xF09;
 	});
 
-	// TODO: Do the same thing with `vars.CheckArkBossDefeated`
-	vars.CheckItemCollected = (Func<dynamic, dynamic, bool>)((curr, prev) => {
-		return ((settings["canine_tracker"] && curr.canine_tracker > prev.canine_tracker) ||
-			(settings["duty_orb"] && curr.duty_orb > prev.duty_orb) ||
-			(settings["justice_orb"] && curr.justice_orb > prev.justice_orb) ||
-			(settings["loyalty_orb"] && curr.loyalty_orb > prev.loyalty_orb) ||
-			(settings["mask"] && curr.mask > prev.mask) ||
-			(settings["ogre"] && curr.ogre > prev.ogre) ||
-			(settings["lips"] && curr.lips > prev.lips) ||
-			(settings["eyeball"] && curr.eyeball > prev.eyeball) ||
-			(settings["horn"] && curr.horn > prev.horn));
+	vars.CheckItemCollected = (Func<bool>)(() => {
+		foreach (KeyValuePair<string, int>item in keyItems)
+		{
+			if (_IsSetAndNotDoneYet(item.Key) && memory.ReadValue<ushort>(mainDll + item.Value) == 1)
+			{
+				splitDone.Add(item.Key);
+				return true;
+			}
+		}
+		return false;
 	});
 
 	vars.CheckInNewArea = (Func<dynamic, dynamic, bool>)((curr, prev) =>
 	{
-		foreach (KeyValuePair<string, int[]> transition in transitions)
+		for (int i = 0; i < 47; i++)
 		{
-			if (_is_set_and_not_done_yet(transition.Key) && prev.area_id == transition.Value[0] && curr.area_id == transition.Value[1])
+			if (_IsSetAndNotDoneYet(levelTransitions[i, 0]) && prev.areaId == areaIds[levelTransitions[i, 1]] && curr.areaId == areaIds[levelTransitions[i, 2]])
 			{
-				split_done.Add(transition.Key);
+				splitDone.Add(levelTransitions[i, 0]);
 				return true;
 			}
 		}
@@ -381,9 +380,9 @@ init
 	});
 
 	vars.CheckHolyEagleObtained = (Func<dynamic, bool>)((curr) => {
-		if (_is_set_and_not_done_yet("holy_eagle") && ((curr.movement_tech & 1) == 1))
+		if (_IsSetAndNotDoneYet("holy_eagle") && ((curr.movementTech & 1) == 1))
 		{
-			split_done.Add("holy_eagle");
+			splitDone.Add("holy_eagle");
 			return true;
 		}
 		return false;
@@ -391,9 +390,9 @@ init
 
 	vars.CheckNonArkBossDefeated = (Func<dynamic, dynamic, bool>)((curr, prev) =>
 	{
-		foreach (string boss in non_ark_bosses)
+		foreach (string boss in nonArkBosses)
 		{
-			if (_is_set_and_not_done_yet(boss) && curr.area_id == area_ids[boss] && curr.results_money > prev.results_money)
+			if (_IsSetAndNotDoneYet(boss) && curr.areaId == areaIds[boss] && curr.resultsMoney > prev.resultsMoney)
 			{
 				return true;
 			}
@@ -401,13 +400,13 @@ init
 		return false;
 	});
 
-	vars.CheckArkBossDefeated = (Func<dynamic, dynamic, bool>)((curr, prev) =>
+	vars.CheckArkBossDefeated = (Func<bool>)(() =>
 	{
-		foreach (KeyValuePair<string, int> boss in ark_bosses)
+		foreach (KeyValuePair<string, int> boss in arkBosses)
 		{
-			if (_is_set_and_not_done_yet(boss.Key) && memory.ReadValue<int>(main_dll + boss.Value) == 0x112A880)
+			if (_IsSetAndNotDoneYet(boss.Key) && memory.ReadValue<int>(mainDll + boss.Value) == 0x112A880)
 			{
-				split_done.Add(boss.Key);
+				splitDone.Add(boss.Key);
 				return true;
 			}
 		}
@@ -416,14 +415,14 @@ init
 
 	vars.CheckGameDone = (Func<dynamic, dynamic, bool>)((curr, prev) =>
 	{
-		return settings["final"] && curr.final_results > prev.final_results && curr.final_results == 65536 && current.area_id == area_ids["yami"];
+		return settings["final"] && curr.finalResults > prev.finalResults && curr.finalResults == 65536 && current.areaId == areaIds["yami"];
 	});
 
-	vars.ClearSplitDoneSet = (Action)(() => split_done.Clear());
+	vars.ClearSplitDoneSet = (Action)(() => splitDone.Clear());
 
-	vars.IsInLoadingOrTitleScreen = (Func<int, bool>)((current_area_id) =>
+	vars.IsInLoadingOrTitleScreen = (Func<int, bool>)((current_areaId) =>
 	{
-		return (current_area_id == area_ids["title_screen"] || current_area_id == area_ids["loading_screen"]);
+		return (current_areaId == areaIds["title_screen"] || current_areaId == areaIds["loading_screen"]);
 	});
 }
 
@@ -431,13 +430,13 @@ start {
 	// IGT is measured by frames, 60fps. This starts counting when the game
 	// starts for the first time, and resets when a new game is loaded.
 	// The previous frame count is loaded when a file is loaded as well.
-	if ((current.area_id != 65535 || current.area_id != 0) && current.time < old.time) {
+	if ((current.areaId != 65535 || current.areaId != 0) && current.time < old.time) {
 		vars.kamiki_shinshu = false;
 		vars.taka_kusa = false;
 		vars.kusa_taka = false;
 		vars.coast_city = false;
 
-		vars.is_running = true;
+		vars.isRunning = true;
 
 		return true;
 	} else {
@@ -450,24 +449,29 @@ update {
 
 reset {
 	vars.ClearSplitDoneSet();
-	return vars.is_running && vars.IsInLoadingOrTitleScreen(current.area_id);
+	return vars.isRunning && vars.IsInLoadingOrTitleScreen(current.areaId);
 }
 
 isLoading {
 	// Ensures the timer doesn't start while on the title screen.
-	return vars.IsInLoadingOrTitleScreen(current.area_id);
+	return vars.IsInLoadingOrTitleScreen(current.areaId);
 }
 
 split
 {
 	return (
 		(vars.CheckInNewArea(current, old)) ||
-		(vars.CheckItemCollected(current, old)) ||
+		(vars.CheckItemCollected()) ||
 		(vars.CheckDogFed(current, old)) ||
 		(vars.CheckRyoBloomed(current, old)) ||
 		(vars.CheckHolyEagleObtained(current, old)) ||
 		(vars.CheckNonArkBossDefeated(current, old)) ||
-		(vars.CheckArkBossDefeated(current, old)) ||
+		(vars.CheckArkBossDefeated()) ||
 		(vars.CheckGameDone(current, old))
 	);
+}
+
+exit {
+	// Just in case
+	vars.ClearSplitDoneSet();
 }
