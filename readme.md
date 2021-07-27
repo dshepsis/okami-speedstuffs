@@ -24,7 +24,7 @@ The teleport input takes the format `<x, y, z>` or `<x y z>`. You can have any c
 ## Resources
 
 [Ōkami Leaderboard](https://www.speedrun.com/Okami)  
-[Ōkami Speedrunning Discord](https://discord.gg/AQNKmMu)
+[Ōkami Speedrunning Discord](https://discord.gg/AQNKmMu)  
 [Link to their GH, specifically their repo that holds documentation on writing an autosplitter script](https://github.com/LiveSplit/LiveSplit.AutoSplitters)
 
 ## Contributors
