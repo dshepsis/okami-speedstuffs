@@ -1,4 +1,4 @@
-# Ōkami
+# Ōkami Speedstuffs
 
 This is, as you can tell at the top left of your screen, a fork of a repo for tools related to Okami speedrunning. FWIW, [here's the original repo](https://github.com/speedfuns/okami).
 
