@@ -307,11 +307,11 @@ init
 		return null;
 	});
 
-	string[,] saplings = new string[2,3]
+	string[,] saplings = new string[2,4]
 	{
-		// {<split_name>, <prev_exit_id>, <curr_exit_id>}
-		{"bloom_agata", "0x10F03", "0xFF0F04"},
-		{"bloom_ryo",   "0xF09",   "0xFF0F0A"},
+		// {<split_name>, <level_name>, <prev_exit_id>, <curr_exit_id>}
+		{"bloom_agata", "agata_forest",   "0x10F03", "0xFF0F04"},
+		{"bloom_ryo",   "ryoshima_coast", "0xF09",   "0xFF0F0A"},
 	};
 
 	vars.CheckSaplingBloomed = (Func<dynamic, dynamic, string>)((curr, prev) =>
@@ -320,6 +320,7 @@ init
 		for (int i = 0; i < 2; i++)
 		{
 			if (_IsSetAndNotDoneYet(saplings[i, 0])
+				&& curr.levelId == levelIds[saplings[i, 1]]
 				&& prev.exitId == Convert.ToInt32(saplings[i, 2], 16)
 				&& curr.exitId == Convert.ToInt32(saplings[i, 3], 16)
 			)
