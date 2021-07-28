@@ -9,6 +9,8 @@ state("Okami")
 	// For Holy Eagle, Digging Champ, etc.
 	byte movementTech : "main.dll", 0xB4DFA2;
 
+	bool gamePauseBoolean : "flower_kernel.m2::render::Context::_pCurrentContext", 0x44;
+
 	// Multi-use flags
 	// Area ID list: https://docs.google.com/spreadsheets/d/1IoZ1XFeblOTb6Qq9PHfBq1KRdcpgYRz8pTObhF3qMrs/edit?usp=sharing
 	// `resultsMoney` will be used to signify boss fights have ended in
@@ -24,7 +26,8 @@ state("Okami")
 
 	// Endgame
 	// Timing ends on the "Final Results" screen for IGT.
-	// Other possible final result values: https://my.mixtape.moe/aeoxal.png
+	// Other possible final result values: https://my.mixtape.moe/aeoxal.png <- Dead link
+	// FWIW, the first Blight fight ends with finalResults having a value of 16777216
 	int finalResults : "main.dll", 0xB5262C;
 }
 
@@ -43,9 +46,10 @@ startup
 	settings.Add("shinshu_hana",        false, "Enter Hana Valley", "hana");
 	settings.Add("hana_shinshu",        true,  "Exit Hana Valley",  "hana");
 
-	// Tsuta Ruins
+	// Agata Forest/Tsuta Ruins
 	settings.Add("ruins",               true,  "Tsuta Ruins");
 	settings.Add("shinshu_agata",       true,  "Enter Agata Forest",      "ruins");
+	settings.Add("bloom_agata",         true,  "Bloom Agata Forest",      "ruins");
 	settings.Add("agata_fishing",       true,  "Agata Fishing Minigames", "ruins");
 	settings.Add("agata_ruins",         true,  "Enter Tsuta Ruins",       "ruins");
 	settings.Add("ruins_spider",        false, "Enter Spider Queen",      "ruins");
@@ -163,29 +167,8 @@ init
 {
 	IntPtr mainDll = modules.Single(m => m.ModuleName == "main.dll").BaseAddress;
 
-	Dictionary<string, int> keyItems = new Dictionary<string, int>
-	{
-		{"canine_tracker", 0xB206B4},
-		{"duty_orb",       0xB206D0},
-		{"justice_orb",    0xB206CE},
-		{"loyalty_orb",    0xB206CC},
-		{"mask",           0xB206C2},
-		{"ogre",           0xB206C4},
-		{"lips",           0xB206C6},
-		{"eyeball",        0xB206C8},
-		{"horn",           0xB206CA},
-	};
-
-	Dictionary<string, int> feedDogBitfield = new Dictionary<string, int>
-	{
-		{"shin", 0x10},
-		{"rei",  0x20},
-		{"ko",   0x40},
-		{"chi",  0x80},
-	};
-
 	// As mentioned above, the area ID list is at https://docs.google.com/spreadsheets/d/1IoZ1XFeblOTb6Qq9PHfBq1KRdcpgYRz8pTObhF3qMrs/edit?usp=sharing
-	Dictionary<string, int> areaIds = new Dictionary<string, int>
+	Dictionary<string, int> levelIds = new Dictionary<string, int>
 	{
 		{"loading_screen",                        0},
 		{"cursed_kamiki_village",                 1},
@@ -209,16 +192,16 @@ init
 		{"river_of_the_heavens",                 30},
 		{"sei-an_city_aristocratic_qtr",         31},
 		{"sei-an_city_commoners_qtr",            32},
-		{"queens_palace",                        33}, // Old autosplitter checks this for Rao. Test it out.
+		{"queens_palace",                        33},
 		{"dragon_palace",                        34},
 		{"inside_the_dragon",                    35},
 		{"sunken_ship",                          36},
-		{"imperial_palace",                      37}, // Old autosplitter checks this for Blight. Test it out.
+		{"imperial_palace",                      37}, // Used for Blight split, since results only show after freeing Kaguya
 		{"imperial_palace_garden",               38},
 		{"oni_island_lower_floors",              39},
 		{"ninetails",                            40},
 		{"catcall_tower",                        41},
-		{"blight",                               42}, // Old autosplitter does NOT check this for Blight. Test it out.
+		{"blight",                               42}, // Not used for Blight split; see right above
 		{"oni_island_exterior",                  44},
 		{"oni_island_upper_floors",              45},
 		{"oni_island_2d_room",                   46},
@@ -301,7 +284,97 @@ init
 		{"yamato_yami",         "ark_of_yamato",                "yami"},
 	};
 
-	int levelTransitionsLength = levelTransitions.GetLength(0);
+	Func<string, bool> _IsSetAndNotDoneYet = key => settings[key] && !vars.splitDone.Contains(key);
+
+	Dictionary<string, int> kusaDogs = new Dictionary<string, int>
+	{
+		{"shin", 0x10},
+		{"rei",  0x20},
+		{"ko",   0x40},
+		{"chi",  0x80},
+	};
+
+	vars.CheckDogFed = (Func<dynamic, dynamic, string>)((curr, prev) =>
+	{
+		if (curr.feedDogBitfield == prev.feedDogBitfield) return null;
+		foreach (KeyValuePair<string, int> dog in kusaDogs)
+		{
+			if (_IsSetAndNotDoneYet(dog.Key) && ((curr.feedDogBitfield & dog.Value) == dog.Value))
+			{
+				return dog.Key;
+			}
+		}
+		return null;
+	});
+
+	string[,] saplings = new string[2,3]
+	{
+		// {<split_name>, <prev_exit_id>, <curr_exit_id>}
+		{"bloom_agata", "0x10F03", "0xFF0F04"},
+		{"bloom_ryo",   "0xF09",   "0xFF0F0A"},
+	};
+
+	vars.CheckSaplingBloomed = (Func<dynamic, dynamic, string>)((curr, prev) =>
+	{
+		if (prev.exitId == curr.exitId) return null;
+		for (int i = 0; i < 2; i++)
+		{
+			if (_IsSetAndNotDoneYet(saplings[i, 0])
+				&& prev.exitId == Convert.ToInt32(saplings[i, 2], 16)
+				&& curr.exitId == Convert.ToInt32(saplings[i, 3], 16)
+			)
+			{
+				return saplings[i, 0];
+			}
+		}
+		return null;
+	});
+
+	Dictionary<string, int> keyItems = new Dictionary<string, int>
+	{
+		{"canine_tracker", 0xB206B4},
+		{"duty_orb",       0xB206D0},
+		{"justice_orb",    0xB206CE},
+		{"loyalty_orb",    0xB206CC},
+		{"mask",           0xB206C2},
+		{"ogre",           0xB206C4},
+		{"lips",           0xB206C6},
+		{"eyeball",        0xB206C8},
+		{"horn",           0xB206CA},
+	};
+
+	vars.CheckItemCollected = (Func<string>)(() => {
+		foreach (KeyValuePair<string, int>item in keyItems)
+		{
+			if (_IsSetAndNotDoneYet(item.Key) && memory.ReadValue<ushort>(mainDll + item.Value) == 1)
+			{
+				return item.Key;
+			}
+		}
+		return null;
+	});
+
+	vars.CheckInNewArea = (Func<dynamic, dynamic, string>)((curr, prev) =>
+	{
+		if (prev.areaId == curr.areaId) return null;
+		for (int i = 0; i < 47; i++)
+		{
+			if (_IsSetAndNotDoneYet(levelTransitions[i, 0]) && prev.areaId == levelIds[levelTransitions[i, 1]] && curr.areaId == levelIds[levelTransitions[i, 2]])
+			{
+				return levelTransitions[i, 0];
+			}
+		}
+		return null;
+	});
+
+	vars.CheckHolyEagleObtained = (Func<dynamic, string>)((curr, prev) => {
+		if (prev.movementTech == curr.movementTech) return null;
+		if (_IsSetAndNotDoneYet("holy_eagle") && ((curr.movementTech & 1) == 1))
+		{
+			return "holy_eagle";
+		}
+		return null;
+	});
 
 	// We track non-Ark bosses differently, by simply checking for both your area ID and whether you've gotten
 	// more results money. Hopefully we'll find out how to check for boss defeats more directly.
@@ -319,84 +392,29 @@ init
 		"yami",
 	};
 
-	Dictionary<string, int> arkBosses = new Dictionary<string, int>{
-		{"blight2",       0xB3552C},
-		{"crimson_helm2", 0xB356F4},
-		{"ninetails2",    0xB35610},
-		{"orochi3",       0xB35448},
-		{"spider_queen2", 0xB35364},
-	};
-
-	Func<int, KeyValuePair<string, int>, bool> _CheckDogFed = (current_state, dog) =>
-	{
-		return (settings[dog.Key] && (current_state & dog.Value) == dog.Value);
-	};
-
-	Func<string, bool> _IsSetAndNotDoneYet = (key) => settings[key] && !vars.splitDone.Contains(key);
-
-	vars.CheckDogFed = (Func<dynamic, dynamic, string>)((curr, prev) =>
-	{
-		if (curr.feedDogBitfield == prev.feedDogBitfield) return null;
-		foreach (KeyValuePair<string, int> dog in feedDogBitfield)
-		{
-			if (_CheckDogFed(curr.feedDogBitfield, dog))
-			{
-				return dog.Key;
-			}
-		}
-		return null;
-	});
-
-	vars.CheckRyoBloomed = (Func<dynamic, dynamic, string>)((curr, prev) =>
-	{
-		return (_IsSetAndNotDoneYet("bloom_ryo")
-			&& curr.areaId == areaIds["ryoshima_coast"]
-			&& curr.exitId == 0xFF0F0A
-			&& prev.exitId == 0xF09) ? "bloom_ryo" : null;
-	});
-
-	vars.CheckItemCollected = (Func<string>)(() => {
-		foreach (KeyValuePair<string, int>item in keyItems)
-		{
-			if (_IsSetAndNotDoneYet(item.Key) && memory.ReadValue<ushort>(mainDll + item.Value) == 1)
-			{
-				return item.Key;
-			}
-		}
-		return null;
-	});
-
-	vars.CheckInNewArea = (Func<dynamic, dynamic, string>)((curr, prev) =>
-	{
-		for (int i = 0; i < levelTransitionsLength; i++)
-		{
-			if (_IsSetAndNotDoneYet(levelTransitions[i, 0]) && prev.areaId == areaIds[levelTransitions[i, 1]] && curr.areaId == areaIds[levelTransitions[i, 2]])
-			{
-				return levelTransitions[i, 0];
-			}
-		}
-		return null;
-	});
-
-	vars.CheckHolyEagleObtained = (Func<dynamic, string>)((curr) => {
-		if (_IsSetAndNotDoneYet("holy_eagle") && ((curr.movementTech & 1) == 1))
-		{
-			return "holy_eagle";
-		}
-		return null;
-	});
+	Func<string, int> _GetAreaIdForNonArkBoss = bossName => levelIds[bossName == "rao" ? "queens_palace" : bossName == "blight" ? "imperial_palace" : bossName];
 
 	vars.CheckNonArkBossDefeated = (Func<dynamic, dynamic, string>)((curr, prev) =>
 	{
+		if (prev.resultsMoney >= curr.resultsMoney) return null;
 		foreach (string boss in nonArkBosses)
 		{
-			if (_IsSetAndNotDoneYet(boss) && curr.areaId == areaIds[boss == "rao" ? "queens_palace" : boss] && curr.resultsMoney > prev.resultsMoney)
+			if (_IsSetAndNotDoneYet(boss) && curr.areaId == _GetAreaIdForNonArkBoss(boss) && prev.resultsMoney < curr.resultsMoney)
 			{
 				return boss;
 			}
 		}
 		return null;
 	});
+
+	Dictionary<string, int> arkBosses = new Dictionary<string, int>{
+		// {<split_name>, <address_offset>}
+		{"blight2",       0xB3552C},
+		{"crimson_helm2", 0xB356F4},
+		{"ninetails2",    0xB35610},
+		{"orochi3",       0xB35448},
+		{"spider_queen2", 0xB35364},
+	};
 
 	vars.CheckArkBossDefeated = (Func<string>)(() =>
 	{
@@ -412,12 +430,12 @@ init
 
 	vars.CheckGameDone = (Func<dynamic, dynamic, bool>)((curr, prev) =>
 	{
-		return settings["final"] && curr.finalResults > prev.finalResults && curr.finalResults == 65536 && current.areaId == areaIds["yami"];
+		return settings["final"] && prev.finalResults < curr.finalResults && curr.finalResults == 65536 && current.areaId == levelIds["yami"];
 	});
 
 	vars.IsInLoadingOrTitleScreen = (Func<int, bool>)((current_areaId) =>
 	{
-		return (current_areaId == areaIds["title_screen"] || current_areaId == areaIds["loading_screen"]);
+		return (current_areaId == levelIds["title_screen"] || current_areaId == levelIds["loading_screen"]);
 	});
 }
 
@@ -449,8 +467,8 @@ split
 		vars.CheckInNewArea(current, old)
 		?? vars.CheckItemCollected()
 		?? vars.CheckDogFed(current, old)
-		?? vars.CheckRyoBloomed(current, old)
-		?? vars.CheckHolyEagleObtained(current)
+		?? vars.CheckSaplingBloomed(current, old)
+		?? vars.CheckHolyEagleObtained(current, old)
 		?? vars.CheckNonArkBossDefeated(current, old)
 		?? vars.CheckArkBossDefeated()
 	)) != null)
