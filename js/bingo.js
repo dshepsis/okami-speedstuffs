@@ -10,13 +10,6 @@ import { getPopoutOptions, openPopout } from './popout.js'
 // sizes.
 
 /**
- * Unused. Mirrors a value along a number line. Assumes i >= 0.
- * @param {number} i The number to mirror
- * @param {number} size The range of the number line. Defaults to 5.
- */
-const mirror = (i, size = 5) => i + 2 * (~~(size / 2) - i)
-
-/**
  * Creates an array of `size` with elements that go from `0` to `size - 1`.
  * @param {number} size
  * @returns {number[]}
@@ -100,7 +93,7 @@ const addCycleChallengeStateOnClickCells = () => {
  * @param {string} name
  * @param {string} defaultVal
  */
-const guptill = (name, defaultVal = '') =>
+const getSearchParam = (name, defaultVal = '') =>
   new URLSearchParams(location.search).get(name) || defaultVal
 
 /**
@@ -141,7 +134,7 @@ const getChallenges = challengePool =>
  * @param {Challenge[]} challenges
  */
 const printChallengesOnBoard = challenges =>
-  challenges.forEach(({ name }, i) => {
+  challenges.forEach((name, i) => {
     $('#slot' + (i + 1)).append(name)
   })
 
@@ -155,8 +148,10 @@ const printChallengesOnBoard = challenges =>
  *                    of course.
  */
 const bingo = challengePool => {
-  const seed = guptill('seed')
+  const seed = getSearchParam('seed')
+  console.log(seed);
 
+  // This always refreshes the pages, so it's fine to just return:
   if (seed == '') return reseedPage()
 
   Math.seedrandom(seed) //sets up the RNG
@@ -186,12 +181,5 @@ const reseedPage = () => {
     }).toString()
   return false
 }
-
-// Adds `reseedPage` to be the on-click handler for the sort buttons on the bingo page.
-$.map($('.sortButton'), function (el) {
-  $(el).click(() => {
-    reseedPage($(el).data('type'))
-  })
-})
 
 export default bingo

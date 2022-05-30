@@ -358,31 +358,6 @@ main #about_bingo {
   margin: auto;
 }
 
-#sortButtons {
-  overflow: visible;
-}
-
-.sortButton {
-  cursor: pointer;
-  font-weight: bold;
-  text-shadow: black 1px 1px 1px;
-  color: white;
-  margin-left: 6px;
-  margin-right: 2px;
-  text-decoration: none;
-  padding: 4px 18px;
-  text-align: center;
-  -moz-border-radius: 15px;
-  border-radius: 15px;
-  border-left: 2px solid #2339a4;
-  border-right: 2px solid #1a2a88;
-  border-top: 2px solid #244ca6;
-  border-bottom: 2px solid #192686;
-  background-color: #1e3294;
-  background: -moz-linear-gradient(top, #2045c0 0%, #1e3294 100%);
-  filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#2045c0', endColorstr='#1e3294',GradientType=0 );
-}
-
 .note {
   color: gray;
   font-style: italic;
