@@ -366,3 +366,15 @@ main #about_bingo {
   padding-top: 3px;
   padding-bottom: 3px;
 }
+
+body[data-loading="true"] main {
+  display: none;
+}
+
+body[data-loading="false"] #loading-message {
+  display: none;
+}
+
+body[data-in-development="true"] {
+  background: #311;
+}
