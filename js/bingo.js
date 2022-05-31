@@ -97,37 +97,25 @@ const getSearchParam = (name, defaultVal = '') =>
   new URLSearchParams(location.search).get(name) || defaultVal
 
 /**
- * Get a random number in `challengePool`.
- * Location of this call affects its result. Like yes, even if you call this as a
- * parameter, or assign it first to a const before passing _that_ in, the value's
- * different.
- * @param {ChallengePool} challengePool
- * @returns {number}
- */
-const getRandomIndex = challengePool => ~~(challengePool.length * Math.random())
-
-/**
  * Select challenges from the challenge pool, defined in `tables/generic.js`.
+ * This rearranges the parameter array in-place, but this doesn't matter because
+ * challengePool is only ever read here, and this function only runs once (when
+ * the page loads).
  * @param {ChallengePool} challengePool The challenges to choose from
  * @returns {Challenge[]} The array of selected challenges to populate the board
  */
-const getChallenges = challengePool =>
-  // We're not actually reducing the array here. Rather, we're taking a copy of it and
-  // iteratively removing a selected element from that copy to get our selected
-  // challenges.
-  challengePool.reduce(
-    acc => {
-      const index = getRandomIndex(acc.pool)
-      return {
-        selected: acc.selected.concat(acc.pool[index]),
-        pool: acc.pool.slice(0, index).concat(acc.pool.slice(index + 1)),
-      }
-    },
-    {
-      selected: [],
-      pool: challengePool.slice(0),
-    },
-  ).selected
+const getChallenges = (challengePool, count = 25) => {
+  const selected = [];
+  const poolSize = challengePool.length;
+  for (let i = 0; i < count; ++i) {
+    const randIndex = Math.floor(Math.random() * (poolSize - i)) + i;
+    const temp = challengePool[randIndex];
+    challengePool[randIndex] = challengePool[i];
+    challengePool[i] = temp;
+    selected.push(temp);
+  }
+  return selected;
+}
 
 /**
  * Prints the selected challenges on the bingo board. The final step of everything.
@@ -149,7 +137,6 @@ const printChallengesOnBoard = challenges =>
  */
 const bingo = challengePool => {
   const seed = getSearchParam('seed')
-  console.log(seed);
 
   // This always refreshes the pages, so it's fine to just return:
   if (seed == '') return reseedPage()
@@ -178,8 +165,7 @@ const reseedPage = () => {
     '?' +
     new URLSearchParams({
       seed: Math.ceil(999999 * Math.random()),
-    }).toString()
-  return false
+    }).toString();
 }
 
 export default bingo

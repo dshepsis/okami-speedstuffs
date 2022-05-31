@@ -87,6 +87,7 @@ ul li {
   -moz-user-select: none;
   -o-user-select: none;
   -webkit-user-select: none;
+  user-select: none;
 }
 
 table {
@@ -199,6 +200,7 @@ main #bingo {
   -moz-user-select: none;
   -o-user-select: none;
   -webkit-user-select: none;
+  user-select: none;
   margin-top: 16px;
 }
 
@@ -299,6 +301,7 @@ main #about_bingo {
 #ajaxspin {
   -moz-animation: spin 1s linear infinite;
   -webkit-animation: spin 1s linear infinite;
+  animation: spin 1s linear infinite;
   border-color: #212121 #865934 #858b93 #c6b561;
   border-radius: 40px;
   border-style: dotted;
@@ -311,6 +314,7 @@ main #about_bingo {
 #ajaxloading {
   -moz-animation: bounce 1.5s linear infinite;
   -webkit-animation: bounce 1.5s linear infinite;
+  animation: spin 1s linear infinite;
   color: gray;
   font-size: 85%;
   font-weight: 700;
